@@ -1,32 +1,18 @@
-# --- Python & Backend Environment ---
-backend/venv/
-backend/.venv/
+
+
+# --- Python Cache ---
 **/__pycache__/
 *.pyc
-*.pyo
-*.pyd
-.pytest_cache/
-backend/app/database.db
 
-# --- Vector Database Storage ---
-backend/chroma_db/
-**/chroma_db/
+# --- Virtual Environment ---
+# This stops Git from scanning the heavy venv/Lib folder!
+backend/venv/
 
+# --- Local Databases & Vector Stores ---
+# Blocks the Chroma database files and SQLite chat logs
+backend/vector_store/
+backend/chat_history.db
 
-.env
+# --- Sensitive API Keys ---
 backend/.env
-frontend/.env
-frontend/.env.local
-
-# --- Node & Frontend Environment ---
-frontend/node_modules/
-frontend/dist/
-frontend/build/
-.eslintcache
-
-# --- System & IDE Specific ---
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
-*.log
+.env
