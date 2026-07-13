@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
 
 function App() {
   const [messages, setMessages] = useState([]);
@@ -17,12 +18,39 @@ function App() {
     }
   };
 
-  // Handle actual files chosen by user
-  const handleFileChange = (e) => {
+// Handle actual files chosen by user and upload to backend
+  const handleFileChange = async (e) => {
     const files = Array.from(e.target.files);
-    if (files.length > 0) {
-      const fileNames = files.map(file => file.name);
-      setUploadedFiles(prev => [...prev, ...fileNames]);
+    if (files.length === 0) return;
+
+    // 1. Prepare Multipart Form Data payload
+    const formData = new FormData();
+    files.forEach(file => {
+      formData.append("files", file);
+    });
+
+    try {
+      // 2. Send network request to the FastAPI backend upload endpoint
+      const response = await fetch('http://localhost:8000/api/upload', {
+        method: 'POST',
+        body: formData, // Browser automatically sets 'multipart/form-data' headers
+      });
+
+      if (!response.ok) {
+        throw new Error('Backend upload failed');
+      }
+
+      const data = await response.json();
+      
+      // 3. Only update the UI state if the backend successfully indexed the files
+      if (data.status === "success") {
+        const fileNames = files.map(file => file.name);
+        setUploadedFiles(prev => [...prev, ...fileNames]);
+        console.log("Backend upload successful:", data.message);
+      }
+    } catch (error) {
+      console.error("Error uploading files to backend:", error);
+      alert("⚠️ Failed to upload and index document on the backend server. Make sure main.py is running!");
     }
   };
 
@@ -164,7 +192,9 @@ function App() {
                       : 'bg-neutral-50 text-slate-800 border border-slate-200 rounded-bl-none'
                   }`}
                 >
-                  {msg.text}
+                  <div className="markdown-content prose max-w-none text-left">
+                    <ReactMarkdown>{msg.text}</ReactMarkdown>
+                  </div>
                 </div>
               </div>
             ))}
