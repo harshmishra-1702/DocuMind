@@ -11,6 +11,7 @@ function App() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   
   const fileInputRef = useRef(null);
+  const textareaRef = useRef(null);
 
   useEffect(() => {
     const fetchActiveFiles = async () => {
@@ -28,6 +29,14 @@ function App() {
     };
     fetchActiveFiles();
   }, []);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      textarea.style.height = 'auto';
+      textarea.style.height = `${Math.min(textarea.scrollHeight, 180)}px`;
+    }
+  }, [input]);
 
   const handleZoneClick = () => {
     if (fileInputRef.current) {
@@ -124,6 +133,13 @@ function App() {
         }]);
         setIsThinking(false);
       }, 1500);
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend(e);
     }
   };
 
@@ -292,13 +308,15 @@ function App() {
           <div className="pb-6 pt-2 px-6 bg-[#f7f9f5] z-10">
             <div className="max-w-3xl mx-auto flex items-center bg-white border border-slate-200/80 focus-within:border-lime-500 rounded-2xl p-2 shadow-md shadow-slate-100/70 transition">
               <form onSubmit={handleSend} className="flex-1 flex items-center pl-3">
-                <input 
-                  type="text"
+                <textarea 
+                  ref={textareaRef}
                   value={input}
                   disabled={isThinking}
                   onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  rows={1}
                   placeholder={isThinking ? "Parsing document fragments..." : "Ask a question about your documents..."}
-                  className="w-full bg-transparent text-sm text-slate-800 placeholder-slate-400 focus:outline-none disabled:opacity-60"
+                  className="w-full bg-transparent text-sm text-slate-800 placeholder-slate-400 focus:outline-none disabled:opacity-60 resize-none max-h-48 py-1.5 align-middle scrollbar-thin"
                 />
                 <button 
                   type="submit"
