@@ -1,15 +1,21 @@
 import io
+import os
 import logging
 from typing import List, Dict, Any
-from pydantic import BaseModel, Field
-from pypdf import PdfReader
 from fastapi import FastAPI, HTTPException, UploadFile, File, status
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+from pypdf import PdfReader
+from google import genai
+from google.genai import types
+from dotenv import load_dotenv
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-logger = logging.getLogger("DocuMindCore")
+logger = logging.getLogger("DocuMindRAG")
 
-app = FastAPI(title="DocuMind AI Optimized Engine", version="1.0.1")
+load_dotenv()
+
+app = FastAPI(title="DocuMind Chatbot RAG Engine", version="1.4.1")
 
 app.add_middleware(
     CORSMiddleware,
@@ -19,6 +25,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+SYSTEM_API_KEY = os.environ.get("GEMINI_API_KEY")
+
+ai_client = None
+if SYSTEM_API_KEY:
+    try:
+        ai_client = genai.Client()
+        logger.info("✅ Gemini GenAI Client successfully initialized from local .env environment.")
+    except Exception as e:
+        logger.error(f"❌ Critical initialization failure: {str(e)}")
+else:
+    logger.error("❌ CRITICAL: GEMINI_API_KEY not found in local .env file.")
+
+
 class ChatQuery(BaseModel):
     query: str = Field(..., min_length=1)
 
@@ -26,9 +46,10 @@ class ChatResponse(BaseModel):
     response: str
     status: str = "success"
 
-# Global Storage Pools
+
 KB_VECTOR_STORE: List[Dict[str, str]] = []
 INDEXED_FILES_REGISTRY: List[str] = []
+
 
 def extract_text_from_pdf(file_bytes: bytes) -> str:
     try:
@@ -41,80 +62,38 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
                 full_text.append(text)
         return "\n".join(full_text)
     except Exception as e:
-        logger.error(f"Error parsing PDF payload: {str(e)}")
+        logger.error(f"Error reading PDF layers: {str(e)}")
         return ""
 
-def chunk_text(text: str, chunk_size: int = 150, overlap: int = 30) -> List[str]:
-    """Smaller chunk sizing ensures highly specific paragraphs are isolated cleanly."""
-    sentences = text.split(". ")
+def chunk_text(text: str, chunk_size: int = 400, overlap: int = 80) -> List[str]:
+    words = text.split()
     chunks = []
-    current_chunk = []
-    current_length = 0
-    
-    for sentence in sentences:
-        sentence = sentence.strip()
-        if not sentence:
-            continue
-        current_chunk.append(sentence)
-        current_length += len(sentence.split())
-        
-        if current_length >= chunk_size:
-            chunks.append(". ".join(current_chunk) + ".")
-            current_chunk = current_chunk[-2:] if len(current_chunk) > 2 else []
-            current_length = sum(len(c.split()) for c in current_chunk)
-            
-    if current_chunk:
-        chunks.append(". ".join(current_chunk) + ".")
+    for i in range(0, len(words), chunk_size - overlap):
+        chunk = " ".join(words[i:i + chunk_size])
+        if chunk.strip():
+            chunks.append(chunk)
     return chunks
 
-def evaluate_keyword_similarity(query: str, document_chunks: List[Dict[str, str]], top_k: int = 2) -> str:
-    if not document_chunks:
+def retrieve_relevant_context(query: str, store: List[Dict[str, str]], top_k: int = 3) -> str:
+    if not store:
         return ""
-        
-    query_clean = query.lower()
-    scored_chunks = []
-    
-    # Simple semantic expansion dictionary to catch natural variations
-    synonyms = {
-        "personal": ["private", "personal", "family", "own"],
-        "office hours": ["work time", "working hours", "lunch break", "tea break", "shift"],
-        "call": ["call", "calls", "telephone", "phone"]
-    }
-    
-    for item in document_chunks:
-        chunk_text_lower = item["text"].lower()
-        score = 0
-        
-        # Check explicit word matches
-        for word in query_clean.split():
-            if len(word) > 2 and word in chunk_text_lower:
-                score += 3
-                
-        # Check conceptual synonyms matches
-        for concept, terms in synonyms.items():
-            if concept in query_clean:
-                if any(term in chunk_text_lower for term in terms):
-                    score += 5
-                    
+    query_tokens = set(query.lower().split())
+    matches = []
+    for item in store:
+        chunk_lower = item["text"].lower()
+        score = sum(1 for token in query_tokens if token in chunk_lower)
         if score > 0:
-            scored_chunks.append((score, item["text"], item["source"]))
-            
-    scored_chunks.sort(key=lambda x: x[0], reverse=True)
-    
-    top_matches = []
-    for score, text, source in scored_chunks[:top_k]:
-        top_matches.append(f"📄 **Source File**: {source}\n> {text}")
-        
-    return "\n\n".join(top_matches)
+            matches.append((score, item["text"]))
+    matches.sort(key=lambda x: x[0], reverse=True)
+    return "\n\n---\n\n".join([text for score, text in matches[:top_k]])
+
 
 @app.post("/api/upload", status_code=status.HTTP_201_CREATED)
 async def upload_documents(files: List[UploadFile] = File(...)):
     processed_files = []
-    
     for file in files:
         if not file.filename:
             continue
-            
         try:
             file_bytes = await file.read()
             raw_text = extract_text_from_pdf(file_bytes)
@@ -123,21 +102,17 @@ async def upload_documents(files: List[UploadFile] = File(...)):
                 continue
                 
             text_chunks = chunk_text(raw_text)
-            
             for chunk in text_chunks:
-                KB_VECTOR_STORE.append({
-                    "text": chunk,
-                    "source": file.filename
-                })
+                KB_VECTOR_STORE.append({"text": chunk, "source": file.filename})
                 
             if file.filename not in INDEXED_FILES_REGISTRY:
                 INDEXED_FILES_REGISTRY.append(file.filename)
             processed_files.append(file.filename)
-            logger.info(f"Indexed: {file.filename} ({len(text_chunks)} chunks total)")
+            logger.info(f"Successfully indexed file: {file.filename} ({len(text_chunks)} chunks)")
             
         except Exception as e:
-            logger.error(f"Error indexing {file.filename}: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Inbound processing failed.")
+            logger.error(f"Upload error: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to process file {file.filename}")
         finally:
             await file.close()
             
@@ -145,28 +120,48 @@ async def upload_documents(files: List[UploadFile] = File(...)):
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat_endpoint(payload: ChatQuery):
+    if not ai_client:
+        return ChatResponse(response="⚠️ Backend Gemini Client is uninitialized. Please check your local `.env` configuration file.")
+
     clean_query = payload.query.strip()
     
     try:
-        retrieved_context = evaluate_keyword_similarity(clean_query, KB_VECTOR_STORE, top_k=1)
+        context = retrieve_relevant_context(clean_query, KB_VECTOR_STORE, top_k=3)
         
-        if retrieved_context:
-            ai_answer = (
-                f"### 🔍 Found Document Matching Context\n\n"
-                f"{retrieved_context}\n\n"
-                f"*Extracted instantly from local memory store buffers.*"
+        system_instruction = (
+            "You are DocuMind AI, a friendly, conversational, and expert corporate knowledge assistant. "
+            "Your goal is to answer the user's question like a helpful colleague in a messaging chat application.\n\n"
+            "CRITICAL CONSTRAINTS:\n"
+            "1. NEVER copy-paste large blocks or paragraphs of text verbatim from the context. Always synthesize and rephrase in your own words.\n"
+            "2. Actively mention the explicit section numbers or titles (e.g., 'According to Section 15.0...' ) only when they are present in the text to justify your response.\n"
+            "3. Structure your response using crisp bullet points, clean bold terms, and brief readable paragraphs.\n"
+            "4. Maintain a supportive, direct, and collaborative tone.\n"
+            "5. If the document context does not contain the information needed to answer, politely explain that the currently uploaded files don't have a mention about it."
+        )
+        
+        prompt = (
+            f"Here is the context data pulled from the company documentation files:\n"
+            f"==================================================\n"
+            f"{context if context else 'No document context loaded.'}\n"
+            f"==================================================\n\n"
+            f"User Question: {clean_query}\n"
+            f"Chatbot Response:"
+        )
+
+        response = ai_client.models.generate_content(
+            model='gemini-3.1-flash-lite', 
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                temperature=0.3
             )
-        else:
-            doc_count = len(INDEXED_FILES_REGISTRY)
-            ai_answer = (
-                f"I parsed your prompt: **\"{clean_query}\"**.\n\n"
-                f"⚠️ Active index has **{doc_count} document(s)** registered, but no close content matches were identified. "
-                f"If you recently restarted your terminal backend runner script, please drop your file into the sidebar uploader dropzone again to re-index its text text layers!"
-            )
-            
-        return ChatResponse(response=ai_answer)
+        )
+        
+        return ChatResponse(response=response.text)
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Gemini Inference Failure: {str(e)}")
+        return ChatResponse(response=f"⚠️ Gemini API Error: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

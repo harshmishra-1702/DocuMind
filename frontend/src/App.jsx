@@ -1,5 +1,7 @@
 import React, { useState, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 
 function App() {
   const [messages, setMessages] = useState([]);
@@ -8,32 +10,27 @@ function App() {
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   
-  // Hidden input element reference
   const fileInputRef = useRef(null);
 
-  // Trigger file selection window
   const handleZoneClick = () => {
     if (fileInputRef.current) {
       fileInputRef.current.click();
     }
   };
 
-// Handle actual files chosen by user and upload to backend
   const handleFileChange = async (e) => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
 
-    // 1. Prepare Multipart Form Data payload
     const formData = new FormData();
     files.forEach(file => {
       formData.append("files", file);
     });
 
     try {
-      // 2. Send network request to the FastAPI backend upload endpoint
       const response = await fetch('http://localhost:8000/api/upload', {
         method: 'POST',
-        body: formData, // Browser automatically sets 'multipart/form-data' headers
+        body: formData,
       });
 
       if (!response.ok) {
@@ -42,7 +39,6 @@ function App() {
 
       const data = await response.json();
       
-      // 3. Only update the UI state if the backend successfully indexed the files
       if (data.status === "success") {
         const fileNames = files.map(file => file.name);
         setUploadedFiles(prev => [...prev, ...fileNames]);
@@ -93,7 +89,6 @@ function App() {
   return (
     <div className="flex flex-col h-screen bg-neutral-50 text-slate-800 font-sans overflow-hidden">
       
-      {/* PERFECTLY ALIGNED TOP HEADER WITH HAMBURGER TOGGLE */}
       <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-6 z-10 shadow-sm">
         <div className="flex items-center gap-4">
           <button 
@@ -110,10 +105,8 @@ function App() {
         </div>
       </header>
 
-      {/* LOWER APP BODY SPLIT */}
       <div className="flex flex-1 overflow-hidden relative">
         
-        {/* 1. Sidebar - Collapsible Clean Lime-Tinted Drawer */}
         <aside 
           className={`bg-lime-50/20 border-r border-slate-200 flex flex-col transition-all duration-300 ease-in-out ${
             isSidebarCollapsed ? 'w-0 opacity-0 overflow-hidden border-r-0' : 'w-64 opacity-100'
@@ -124,7 +117,6 @@ function App() {
               <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Knowledge Base</span>
             </div>
             
-            {/* Hidden Input Component */}
             <input 
               type="file" 
               ref={fileInputRef}
@@ -133,7 +125,6 @@ function App() {
               className="hidden" 
             />
             
-            {/* Smooth Rectangular Dropzone Component */}
             <div 
               onClick={handleZoneClick}
               className="w-full border-2 border-dashed border-slate-300 hover:border-lime-500 bg-white hover:bg-lime-50/40 rounded-xl p-5 text-center cursor-pointer transition shadow-sm group"
@@ -143,7 +134,6 @@ function App() {
               <div className="text-xs text-slate-400 mt-1">Click to attach data files</div>
             </div>
 
-            {/* Conditional Card Element - Only visible when files are actually present */}
             {uploadedFiles.length > 0 && (
               <div className="bg-white border border-slate-200 p-3 rounded-xl shadow-sm animate-fade-in max-h-48 overflow-y-auto">
                 <div className="text-xs font-semibold text-slate-500 mb-1">Active Context:</div>
@@ -158,10 +148,8 @@ function App() {
           </div>
         </aside>
 
-        {/* 2. Main Chat Canvas */}
         <main className="flex-1 flex flex-col h-full bg-white relative">
           
-          {/* BRANDED WELCOME OVERLAY WITH SMOOTH LIME GRADIENT COMPRESSION */}
           {messages.length === 0 && (
             <div className="absolute inset-0 flex flex-col items-center justify-center p-8 pb-32 text-center bg-white pointer-events-none z-0 select-none animate-fade-in">
               <div className="max-w-md space-y-5">
@@ -178,7 +166,6 @@ function App() {
             </div>
           )}
 
-          {/* Messages History Feed */}
           <div className="flex-1 overflow-y-auto p-6 space-y-4 max-w-3xl w-full mx-auto z-0">
             {messages.map((msg, index) => (
               <div 
@@ -193,13 +180,17 @@ function App() {
                   }`}
                 >
                   <div className="markdown-content prose max-w-none text-left">
-                    <ReactMarkdown>{msg.text}</ReactMarkdown>
+                    <ReactMarkdown 
+                      remarkPlugins={[remarkMath]} 
+                      rehypePlugins={[rehypeKatex]}
+                    >
+                      {msg.text}
+                    </ReactMarkdown>
                   </div>
                 </div>
               </div>
             ))}
 
-            {/* Three-Dot Fluid Wave Animation (Lime Tinted) */}
             {isThinking && (
               <div className="flex flex-col items-start bg-neutral-50 border border-slate-200 shadow-sm rounded-2xl rounded-bl-none px-5 py-4 max-w-[100px]">
                 <div className="flex items-center space-x-1.5 h-3">
@@ -211,7 +202,6 @@ function App() {
             )}
           </div>
 
-          {/* 3. FLOATING BASE INPUT BAR (With True Telegram-Style Send Button Alignment) */}
           <div className="pb-6 pt-2 px-6 bg-white z-10">
             <div className="max-w-3xl mx-auto flex items-center bg-white border border-slate-200/80 focus-within:border-lime-500 rounded-2xl p-2 shadow-md shadow-slate-100/70 transition">
               <form onSubmit={handleSend} className="flex-1 flex items-center pl-3">
@@ -226,7 +216,6 @@ function App() {
                 <button type="submit" className="hidden" />
               </form>
               
-              {/* Perfectly Formatted Telegram Style Circular Button */}
               <button 
                 onClick={handleSend}
                 disabled={!input.trim() || isThinking}
