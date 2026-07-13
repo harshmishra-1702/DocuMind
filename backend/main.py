@@ -118,6 +118,25 @@ async def upload_documents(files: List[UploadFile] = File(...)):
             
     return {"status": "success", "files": processed_files}
 
+@app.get("/api/documents")
+async def get_documents():
+    return {"status": "success", "files": INDEXED_FILES_REGISTRY}
+
+@app.delete("/api/documents")
+async def delete_document(filename: str):
+    global KB_VECTOR_STORE, INDEXED_FILES_REGISTRY
+    if filename not in INDEXED_FILES_REGISTRY:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Document {filename} not found in index.")
+    
+    # Filter out chunks belonging to this document
+    KB_VECTOR_STORE = [chunk for chunk in KB_VECTOR_STORE if chunk.get("source") != filename]
+    
+    # Remove from registry
+    INDEXED_FILES_REGISTRY.remove(filename)
+    
+    logger.info(f"Successfully deleted and un-indexed document: {filename}")
+    return {"status": "success", "message": f"Document {filename} has been deleted and un-indexed."}
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat_endpoint(payload: ChatQuery):
     if not ai_client:

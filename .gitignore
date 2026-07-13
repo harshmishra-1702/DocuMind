@@ -1,18 +1,51 @@
-
-
-# --- Python Cache ---
+# --- Python Cache & Tools ---
 **/__pycache__/
 *.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
 
 # --- Virtual Environment ---
 # This stops Git from scanning the heavy venv/Lib folder!
 backend/venv/
+venv/
+.venv/
+env/
 
 # --- Local Databases & Vector Stores ---
 # Blocks the Chroma database files and SQLite chat logs
 backend/vector_store/
 backend/chat_history.db
+*.db
 
-# --- Sensitive API Keys ---
+# --- Sensitive API Keys & Env Files ---
 backend/.env
 .env
+.env*.local
+*.env
+
+# --- Node / Frontend ---
+node_modules/
+dist/
+dist-ssr/
+
+# --- Logs ---
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- OS Metadata ---
+.DS_Store
+Thumbs.db
+
+# --- IDE / Editor Settings ---
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
